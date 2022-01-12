@@ -1,2 +1,3 @@
 # rustychain
-Port of blockpy, a minimal blockhain implementation, to Rust
+
+Port of [blockpy](https://github.com/Edorka/blockpy), a minimal blockhain implementation, to Rust
