@@ -1,6 +1,7 @@
 use crate::blockchain::block::{message_as_json, Block};
 use crate::blockchain::{Chain, InvalidBlockErr};
 use serde::{Deserialize, Serialize};
+use crate::api::structs::{BlockList, Limits};
 use std::sync::Once;
 use std::sync::{Arc, Mutex};
 use tide::{Body, Request, Response, Server, StatusCode};
@@ -39,22 +40,6 @@ async fn get_last_block(req: Request<State>) -> tide::Result<Response> {
     let mut res = Response::new(tide::StatusCode::Ok);
     res.set_body(Body::from_json(block)?);
     Ok(res)
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct BlockList {
-    pub items: Vec<Block>,
-}
-
-#[derive(Deserialize)]
-#[serde(default)]
-struct Limits {
-    from_index: usize,
-}
-impl Default for Limits {
-    fn default() -> Self {
-        Self { from_index: 0 }
-    }
 }
 
 async fn get_blocks(req: Request<State>) -> tide::Result<Response> {
@@ -251,7 +236,7 @@ mod tests {
         let app = create_app(String::from("Genesis block sample"));
         arrange_second_block(&app);
         let confirmation = request_get_blocks("from_index=1", &app).await?;
-        let received_list = block_list_from_body(confirmation).await?;
+        let received_list: BlockList = block_list_from_body(confirmation).await?;
         let obtained_block: Block = received_list.items[0].clone();
         assert_eq!(1, obtained_block.index);
         assert_eq!(
@@ -266,7 +251,7 @@ mod tests {
         let app = create_app(String::from("Genesis block sample"));
         arrange_second_block(&app);
         let confirmation = request_get_blocks("from_index=0", &app).await?;
-        let received_list = block_list_from_body(confirmation).await?;
+        let received_list: BlockList = block_list_from_body(confirmation).await?;
         let obtained_block: Block = received_list.items[0].clone();
         assert_eq!(2, received_list.items.len());
         assert_eq!(0, obtained_block.index);
@@ -282,7 +267,7 @@ mod tests {
         let app = create_app(String::from("Genesis block sample"));
         //arrange_second_block(&app);
         let confirmation = request_get_blocks("from_index=1", &app).await?;
-        let received_list = block_list_from_body(confirmation).await?;
+        let received_list: BlockList = block_list_from_body(confirmation).await?;
         assert_eq!(0, received_list.items.len());
         Ok(())
     }
