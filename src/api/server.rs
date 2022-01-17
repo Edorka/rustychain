@@ -1,7 +1,7 @@
+use crate::api::error::{explain_error, APIErrorAndReason};
+use crate::api::structs::{BlockList, Limits};
 use crate::blockchain::block::{message_as_json, Block};
 use crate::blockchain::{Chain, InvalidBlockErr};
-use serde::{Deserialize, Serialize};
-use crate::api::structs::{BlockList, Limits};
 use std::sync::Once;
 use std::sync::{Arc, Mutex};
 use tide::{Body, Request, Response, Server, StatusCode};
@@ -52,45 +52,6 @@ async fn get_blocks(req: Request<State>) -> tide::Result<Response> {
     let mut res = Response::new(tide::StatusCode::Ok);
     res.set_body(Body::from_json(&blocks)?);
     Ok(res)
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct APIErrorAndReason {
-    error: String,
-    reason: String,
-}
-
-fn explain_error(error: Result<Block, InvalidBlockErr>) -> APIErrorAndReason {
-    match error.unwrap_err() {
-        InvalidBlockErr::HashNotMatching(given, expected) => {
-            let reason = format!("previous hash is {} but {} was provided", expected, given);
-            APIErrorAndReason {
-                error: String::from("Previous hash not matching"),
-                reason: String::from(reason),
-            }
-        }
-        InvalidBlockErr::NotCorrelated(given, expected) => {
-            let reason = format!(
-                "expected index {} but received {} which is not inmediate next",
-                expected, given
-            );
-            APIErrorAndReason {
-                error: String::from("New block index is not correlative"),
-                reason: String::from(reason),
-            }
-        }
-        InvalidBlockErr::NotPosterior(given, expected) => {
-            let reason = format!("Given timestamp {} is not later to {}", given, expected);
-            APIErrorAndReason {
-                error: String::from("New block timestamp must be later to previous"),
-                reason: String::from(reason),
-            }
-        }
-        _ => APIErrorAndReason {
-            error: String::from("Unknown error"),
-            reason: String::from("reason"),
-        },
-    }
 }
 
 async fn post_block(mut req: Request<State>) -> tide::Result<Response> {
