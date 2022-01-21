@@ -1,4 +1,4 @@
-use crate::api::error::{explain_error, APIErrorAndReason};
+use crate::api::error::APIErrorAndReason;
 use crate::api::structs::{BlockList, Limits};
 use crate::blockchain::block::{message_as_json, Block};
 use crate::blockchain::{Chain, InvalidBlockErr};
@@ -67,8 +67,8 @@ async fn post_block(mut req: Request<State>) -> tide::Result<Response> {
         }
         error => {
             let mut res = Response::new(StatusCode::BadRequest);
-            let error_and_reasion = explain_error(error);
-            res.set_body(Body::from_json(&error_and_reasion)?);
+            let error_and_reason = error.unwrap_err().as_api_error();
+            res.set_body(Body::from_json(&error_and_reason)?);
             Ok(res)
         }
     }

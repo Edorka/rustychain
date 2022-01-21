@@ -2,7 +2,7 @@ pub mod block;
 use block::{Block, get_epoch_ms, message_as_json};
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum InvalidBlockErr {
     NotCorrelated(u64, u64),
     NotPosterior(u128, u128),

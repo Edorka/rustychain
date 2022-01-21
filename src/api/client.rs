@@ -1,7 +1,7 @@
 use crate::api::error::APIErrorAndReason;
 use crate::api::structs::{BlockList, Limits};
 use crate::blockchain::block::{get_epoch_ms, message_as_json, Block};
-use crate::blockchain::{InvalidBlockErr};
+use crate::blockchain::InvalidBlockErr;
 use surf::{Error, Response};
 
 struct APIClient {
@@ -41,10 +41,10 @@ impl APIClient {
                 let confirmed: Block = response.body_json().await.unwrap();
                 Ok(confirmed)
             }
-            _ => Err(InvalidBlockErr::HashNotMatching(
-                "".to_string(),
-                "".to_string(),
-            )),
+            _ => {
+                let error: APIErrorAndReason = response.body_json().await.unwrap();
+                Err(error.as_native_error())
+            }
         }
     }
 }
@@ -191,20 +191,21 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn send_block_rejected() -> Result<(), Box<dyn std::error::Error>> {
+    async fn send_block_rejected_because_hash() -> Result<(), ()> {
         // Start a background HTTP server on a random local port
-        let reason = format!("previous hash is expected but given was provided");
-        let error = APIErrorAndReason {
-            error: String::from("Previous hash not matching"),
-            reason: reason,
-        };
+        let error = InvalidBlockErr::HashNotMatching(
+            String::from("00000000000000000000000000000000"),
+            String::from("11111111111111111111111111111111"),
+        );
+        let api_error = error.as_api_error();
+
         let second_block = Block {
             index: 0,
             previous_hash: String::from("reallydoesntmatter"),
             timestamp: get_epoch_ms(),
             data: message_as_json("Sample second block"),
         };
-        let mock_server = arrange_server_mock_reject_block(error).await;
+        let mock_server = arrange_server_mock_reject_block(api_error).await;
 
         let client = APIClient::new(mock_server.uri());
 
@@ -213,7 +214,57 @@ mod tests {
         let received_request = &received_requests[0];
         assert_eq!(received_requests.len(), 1);
         assert_eq!(received_request.method, Method::Post);
-        assert!(matches!(failure, InvalidBlockErr::HashNotMatching(_, _)));
+        assert_eq!(failure, error);
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn send_block_rejected_because_timestamp() -> Result<(), ()> {
+        // Start a background HTTP server on a random local port
+        let error = InvalidBlockErr::NotPosterior(1000, 2000);
+        let api_error = error.as_api_error();
+
+        let second_block = Block {
+            index: 0,
+            previous_hash: String::from("reallydoesntmatter"),
+            timestamp: get_epoch_ms(),
+            data: message_as_json("Sample second block"),
+        };
+        let mock_server = arrange_server_mock_reject_block(api_error).await;
+
+        let client = APIClient::new(mock_server.uri());
+
+        let failure = client.send_block(second_block).await.unwrap_err();
+        let received_requests = mock_server.received_requests().await.unwrap();
+        let received_request = &received_requests[0];
+        assert_eq!(received_requests.len(), 1);
+        assert_eq!(received_request.method, Method::Post);
+        assert_eq!(failure, error);
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn send_block_rejected_because_index() -> Result<(), ()> {
+        // Start a background HTTP server on a random local port
+        let error = InvalidBlockErr::NotCorrelated(1, 2);
+        let api_error = error.as_api_error();
+
+        let second_block = Block {
+            index: 0,
+            previous_hash: String::from("reallydoesntmatter"),
+            timestamp: get_epoch_ms(),
+            data: message_as_json("Sample second block"),
+        };
+        let mock_server = arrange_server_mock_reject_block(api_error).await;
+
+        let client = APIClient::new(mock_server.uri());
+
+        let failure = client.send_block(second_block).await.unwrap_err();
+        let received_requests = mock_server.received_requests().await.unwrap();
+        let received_request = &received_requests[0];
+        assert_eq!(received_requests.len(), 1);
+        assert_eq!(received_request.method, Method::Post);
+        assert_eq!(failure, error);
         Ok(())
     }
 }
