@@ -1,5 +1,5 @@
-use crate::api::error::APIErrorAndReason;
 use crate::api::structs::{BlockList, Limits};
+use crate::api::errors::APIErrorAndReason;
 use crate::blockchain::block::{get_epoch_ms, message_as_json, Block};
 use crate::blockchain::InvalidBlockErr;
 use surf::{Error, Response};

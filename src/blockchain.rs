@@ -7,7 +7,8 @@ pub enum InvalidBlockErr {
     NotCorrelated(u64, u64),
     NotPosterior(u128, u128),
     HashNotMatching(String, String),
-    GenesisBlockNotFound
+    GenesisBlockNotFound,
+    Unkown
 }
 
 pub struct Chain {

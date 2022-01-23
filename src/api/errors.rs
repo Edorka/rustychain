@@ -10,7 +10,8 @@ pub struct APIErrorAndReason {
 }
 
 const HASH_NOT_MATCHING_LABEL: &str = "Previous hash not matching";
-const HASH_NOT_MATCHING_DESC_TMPL: &str = "previous hash is {} but {} was provided";
+const INDEX_NOT_CORRELATIVE_LABEL: &str = "New block index is not correlative";
+const TIMESTAMP_NOT_LATER_LABEL: &str = "New block timestamp must be later to previous";
 lazy_static! {
     pub static ref HASH_NOT_MATCHING_DESC_REGEX: Regex =
         Regex::new(r"previous hash is ([a-f0-9]{32}) but ([a-f0-9]{32}) was provided").unwrap();
@@ -19,8 +20,6 @@ lazy_static! {
     pub static ref NOT_POSTERIOR_DESC_REGEX: Regex =
         Regex::new(r"Given timestamp (\d+) is not later to (\d+)").unwrap();
 }
-const INDEX_NOT_CORRELATIVE_LABEL: &str = "New block index is not correlative";
-const TIMESTAMP_NOT_LATER_LABEL: &str = "New block timestamp must be later to previous";
 
 fn params_for_hash_not_matching(reason: String) -> (String, String) {
     let caps = HASH_NOT_MATCHING_DESC_REGEX.captures(&*reason).unwrap();
@@ -91,16 +90,16 @@ impl APIErrorAndReason {
             HASH_NOT_MATCHING_LABEL => {
                 let (expected, given) = params_for_hash_not_matching(self.reason);
                 InvalidBlockErr::HashNotMatching(expected, given)
-            }
+            },
             INDEX_NOT_CORRELATIVE_LABEL => {
                 let (expected, given) = params_for_not_correlative(self.reason);
                 InvalidBlockErr::NotCorrelated(expected, given)
-            }
+            },
             TIMESTAMP_NOT_LATER_LABEL => {
                 let (expected, given) = params_for_not_posterior(self.reason);
                 InvalidBlockErr::NotPosterior(expected, given)
-            }
-            _ => InvalidBlockErr::NotPosterior(0, 1),
+            },
+            _ => InvalidBlockErr::Unkown
         }
     }
 }

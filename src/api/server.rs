@@ -1,5 +1,5 @@
-use crate::api::error::APIErrorAndReason;
 use crate::api::structs::{BlockList, Limits};
+use crate::api::errors::APIErrorAndReason;
 use crate::blockchain::block::{message_as_json, Block};
 use crate::blockchain::{Chain, InvalidBlockErr};
 use std::sync::Once;
