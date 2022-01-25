@@ -1,4 +1,4 @@
 mod server;
 mod client;
-mod error;
+mod errors;
 mod structs;

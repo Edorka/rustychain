@@ -90,16 +90,16 @@ impl APIErrorAndReason {
             HASH_NOT_MATCHING_LABEL => {
                 let (expected, given) = params_for_hash_not_matching(self.reason);
                 InvalidBlockErr::HashNotMatching(expected, given)
-            },
+            }
             INDEX_NOT_CORRELATIVE_LABEL => {
                 let (expected, given) = params_for_not_correlative(self.reason);
                 InvalidBlockErr::NotCorrelated(expected, given)
-            },
+            }
             TIMESTAMP_NOT_LATER_LABEL => {
                 let (expected, given) = params_for_not_posterior(self.reason);
                 InvalidBlockErr::NotPosterior(expected, given)
-            },
-            _ => InvalidBlockErr::Unkown
+            }
+            _ => InvalidBlockErr::Unkown,
         }
     }
 }

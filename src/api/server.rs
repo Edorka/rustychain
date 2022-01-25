@@ -1,29 +1,10 @@
-use crate::api::structs::{BlockList, Limits};
 use crate::api::errors::APIErrorAndReason;
+use crate::api::structs::{BlockList, EntryRejectedErr, Limits, MemberEntry, State};
 use crate::blockchain::block::{message_as_json, Block};
-use crate::blockchain::{Chain, InvalidBlockErr};
 use std::sync::Once;
-use std::sync::{Arc, Mutex};
 use tide::{Body, Request, Response, Server, StatusCode};
 
 static INIT: Once = Once::new();
-
-#[derive(Clone)]
-pub struct State {
-    chain: Arc<Mutex<Chain>>,
-}
-
-impl State {
-    fn new(genesis_data: String) -> Self {
-        Self {
-            chain: Arc::new(Mutex::new(Chain::new(genesis_data))),
-        }
-    }
-    fn append_block(&self, block: Block) -> Result<Block, InvalidBlockErr> {
-        let mut chain = self.chain.lock().unwrap();
-        chain.append(block)
-    }
-}
 
 #[async_std::main]
 pub async fn main() -> tide::Result<()> {
@@ -74,11 +55,39 @@ async fn post_block(mut req: Request<State>) -> tide::Result<Response> {
     }
 }
 
+async fn add_peer(mut req: Request<State>) -> tide::Result<Response> {
+    let addition: MemberEntry = req.body_json().await?;
+    let state = req.state();
+    let added = state.add_peer(addition);
+    match added {
+        Ok(_new_addition) => {
+            let res = Response::new(StatusCode::Created);
+            Ok(res)
+        }
+        Err(error) => match error {
+            EntryRejectedErr::AlreadyPresent(_entry) => {
+                let res = Response::new(StatusCode::Ok);
+                Ok(res)
+            }
+            EntryRejectedErr::Invalid(reason) => {
+                let mut res = Response::new(StatusCode::BadRequest);
+                let rejected = APIErrorAndReason {
+                    error: String::from("Peer rejected"),
+                    reason: reason,
+                };
+                res.set_body(Body::from_json(&rejected)?);
+                Ok(res)
+            }
+        },
+    }
+}
+
 pub fn create_app(genesis_data: String) -> Server<State> {
     INIT.call_once(tide::log::start);
     let mut app = tide::with_state(State::new(genesis_data));
     app.at("/blocks/last").get(get_last_block);
     app.at("/blocks").post(post_block).get(get_blocks);
+    app.at("/peers").post(add_peer);
     app
 }
 
@@ -323,6 +332,31 @@ mod tests {
             report.error
         );
         assert_eq!(String::from(expected_reason), report.reason);
+        Ok(())
+    }
+
+    async fn request_post_member(
+        entry: MemberEntry,
+        app: &Server<State>,
+    ) -> tide::Result<Response> {
+        let peers_url = String::from("https://example.com/peers");
+        let url = Url::parse(&*peers_url).unwrap();
+        let mut req = Request::new(Method::Post, url);
+        let content = serde_json::to_string(&entry).unwrap();
+        req.set_body(content);
+        let res: Response = app.respond(req).await?;
+        Ok(res)
+    }
+
+    #[async_std::test]
+    async fn test_add_new_peer_success() -> tide::Result<()> {
+        let app = create_app(String::from("Genesis block sample"));
+        let new_member = MemberEntry {
+            peer: String::from("ws://localhost:5055"),
+        };
+        let confirmation = request_post_member(new_member, &app).await?;
+        let confirmation_status = confirmation.status();
+        assert_eq!(201, confirmation_status);
         Ok(())
     }
 }
