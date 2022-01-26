@@ -1,5 +1,5 @@
 use crate::api::errors::APIErrorAndReason;
-use crate::api::structs::{BlockList, EntryRejectedErr, Limits, MemberEntry, State};
+use crate::api::structs::{BlockList, EntryRejectedErr, Limits, MemberEntry, PeerList, State};
 use crate::blockchain::block::{message_as_json, Block};
 use std::sync::Once;
 use tide::{Body, Request, Response, Server, StatusCode};
@@ -23,7 +23,7 @@ async fn get_last_block(req: Request<State>) -> tide::Result<Response> {
     Ok(res)
 }
 
-async fn get_blocks(req: Request<State>) -> tide::Result<Response> {
+async fn list_blocks(req: Request<State>) -> tide::Result<Response> {
     let limits: Limits = req.query()?;
     let state = req.state();
 
@@ -35,7 +35,7 @@ async fn get_blocks(req: Request<State>) -> tide::Result<Response> {
     Ok(res)
 }
 
-async fn post_block(mut req: Request<State>) -> tide::Result<Response> {
+async fn add_block(mut req: Request<State>) -> tide::Result<Response> {
     let block: Block = req.body_json().await?;
     let state = req.state();
     let added = state.append_block(block);
@@ -82,12 +82,22 @@ async fn add_peer(mut req: Request<State>) -> tide::Result<Response> {
     }
 }
 
+async fn list_peers(req: Request<State>) -> tide::Result<Response> {
+    let state = req.state();
+    let peers = &state.peers.lock().unwrap();
+    let items: Vec<MemberEntry> = peers.members.clone();
+    let peers = PeerList { items: items };
+    let mut res = Response::new(tide::StatusCode::Ok);
+    res.set_body(Body::from_json(&peers)?);
+    Ok(res)
+}
+
 pub fn create_app(genesis_data: String) -> Server<State> {
     INIT.call_once(tide::log::start);
     let mut app = tide::with_state(State::new(genesis_data));
     app.at("/blocks/last").get(get_last_block);
-    app.at("/blocks").post(post_block).get(get_blocks);
-    app.at("/peers").post(add_peer);
+    app.at("/blocks").post(add_block).get(list_blocks);
+    app.at("/peers").post(add_peer).get(list_peers);
     app
 }
 
@@ -117,7 +127,7 @@ mod tests {
         Ok(res)
     }
 
-    async fn request_get_blocks(limits: &str, app: &Server<State>) -> tide::Result<Response> {
+    async fn request_list_blocks(limits: &str, app: &Server<State>) -> tide::Result<Response> {
         let block_url = &*format!("https://example.com/blocks?{limits}", limits = limits);
         let url = Url::parse(block_url).unwrap();
         let req = Request::new(Method::Get, url);
@@ -125,7 +135,7 @@ mod tests {
         Ok(res)
     }
 
-    async fn request_post_block(block: Block, app: &Server<State>) -> tide::Result<Response> {
+    async fn request_add_block(block: Block, app: &Server<State>) -> tide::Result<Response> {
         let block_url = String::from("https://example.com/blocks");
         let url = Url::parse(&*block_url).unwrap();
         let mut req = Request::new(Method::Post, url);
@@ -174,7 +184,7 @@ mod tests {
     #[async_std::test]
     async fn get_first_block_being_genesis() -> tide::Result<()> {
         let app = create_app(String::from("Genesis block sample"));
-        let confirmation = request_get_blocks("from_index=0", &app).await?;
+        let confirmation = request_list_blocks("from_index=0", &app).await?;
         let received_list: BlockList = block_list_from_body(confirmation).await?;
         assert_eq!(1, received_list.items.len());
         let received_block: Block = received_list.items[0].clone();
@@ -205,7 +215,7 @@ mod tests {
     async fn get_block_one_being_list_first() -> tide::Result<()> {
         let app = create_app(String::from("Genesis block sample"));
         arrange_second_block(&app);
-        let confirmation = request_get_blocks("from_index=1", &app).await?;
+        let confirmation = request_list_blocks("from_index=1", &app).await?;
         let received_list: BlockList = block_list_from_body(confirmation).await?;
         let obtained_block: Block = received_list.items[0].clone();
         assert_eq!(1, obtained_block.index);
@@ -220,7 +230,7 @@ mod tests {
     async fn get_genesis_block_being_list_first() -> tide::Result<()> {
         let app = create_app(String::from("Genesis block sample"));
         arrange_second_block(&app);
-        let confirmation = request_get_blocks("from_index=0", &app).await?;
+        let confirmation = request_list_blocks("from_index=0", &app).await?;
         let received_list: BlockList = block_list_from_body(confirmation).await?;
         let obtained_block: Block = received_list.items[0].clone();
         assert_eq!(2, received_list.items.len());
@@ -235,8 +245,7 @@ mod tests {
     #[async_std::test]
     async fn get_no_blocks_from_one() -> tide::Result<()> {
         let app = create_app(String::from("Genesis block sample"));
-        //arrange_second_block(&app);
-        let confirmation = request_get_blocks("from_index=1", &app).await?;
+        let confirmation = request_list_blocks("from_index=1", &app).await?;
         let received_list: BlockList = block_list_from_body(confirmation).await?;
         assert_eq!(0, received_list.items.len());
         Ok(())
@@ -252,7 +261,7 @@ mod tests {
             timestamp: first_block.timestamp + 100,
             data: message_as_json("Second block data"),
         };
-        let confirmation = request_post_block(second, &app).await?;
+        let confirmation = request_add_block(second, &app).await?;
         let confirmed_block = block_from_body(confirmation).await?;
         assert_eq!(1, confirmed_block.index);
         assert_eq!(
@@ -277,7 +286,7 @@ mod tests {
             first_block.hash(),
             second.previous_hash
         );
-        let confirmation = request_post_block(second, &app).await?;
+        let confirmation = request_add_block(second, &app).await?;
         let confirmation_status = confirmation.status();
         let report = error_from_body(confirmation).await?;
         assert_eq!(400, confirmation_status);
@@ -297,7 +306,7 @@ mod tests {
             data: message_as_json("Second block data"),
         };
         let expected_reason = "expected index 0 but received 3 which is not inmediate next";
-        let confirmation = request_post_block(second, &app).await?;
+        let confirmation = request_add_block(second, &app).await?;
         let confirmation_status = confirmation.status();
         let report = error_from_body(confirmation).await?;
         assert_eq!(400, confirmation_status);
@@ -323,7 +332,7 @@ mod tests {
             "Given timestamp {} is not later to {}",
             second.timestamp, first_block.timestamp
         );
-        let confirmation = request_post_block(second, &app).await?;
+        let confirmation = request_add_block(second, &app).await?;
         let confirmation_status = confirmation.status();
         let report = error_from_body(confirmation).await?;
         assert_eq!(400, confirmation_status);
@@ -335,14 +344,21 @@ mod tests {
         Ok(())
     }
 
+    async fn get_peers_list_from_server_status(app: &Server<State>) -> PeerList {
+        let peers = &app.state().peers.lock().unwrap();
+        PeerList {
+            items: peers.members.clone(),
+        }
+    }
+
     async fn request_post_member(
-        entry: MemberEntry,
+        entry: &MemberEntry,
         app: &Server<State>,
     ) -> tide::Result<Response> {
         let peers_url = String::from("https://example.com/peers");
         let url = Url::parse(&*peers_url).unwrap();
         let mut req = Request::new(Method::Post, url);
-        let content = serde_json::to_string(&entry).unwrap();
+        let content = serde_json::to_string(entry).unwrap();
         req.set_body(content);
         let res: Response = app.respond(req).await?;
         Ok(res)
@@ -354,9 +370,38 @@ mod tests {
         let new_member = MemberEntry {
             peer: String::from("ws://localhost:5055"),
         };
-        let confirmation = request_post_member(new_member, &app).await?;
+        let confirmation = request_post_member(&new_member, &app).await?;
         let confirmation_status = confirmation.status();
+        let obtained_items = get_peers_list_from_server_status(&app).await.items;
         assert_eq!(201, confirmation_status);
+        assert_eq!(obtained_items.len(), 1);
+        assert!(obtained_items.contains(&new_member));
+        Ok(())
+    }
+
+    async fn request_list_peers(app: &Server<State>) -> tide::Result<Response> {
+        let peers_url = "https://example.com/peers";
+        let url = Url::parse(peers_url).unwrap();
+        let req = Request::new(Method::Get, url);
+        let res: Response = app.respond(req).await?;
+        Ok(res)
+    }
+
+    async fn peer_list_from_body(mut response: Response) -> Result<PeerList, serde_json::Error> {
+        let data = response.body_string().await.unwrap();
+        serde_json::from_str(&*data)
+    }
+
+    #[async_std::test]
+    async fn test_list_peers_empty() -> tide::Result<()> {
+        let app = create_app(String::from("Genesis block sample"));
+        let confirmation = request_list_peers(&app).await?;
+        let confirmation_status = confirmation.status();
+        let received_list: PeerList = peer_list_from_body(confirmation).await?;
+
+        assert_eq!(200, confirmation_status);
+        assert_eq!(received_list.items.len(), 0);
+        assert_eq!(get_peers_list_from_server_status(&app).await.items.len(), 0);
         Ok(())
     }
 }

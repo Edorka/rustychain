@@ -5,9 +5,12 @@ use std::sync::{Arc, Mutex};
 use surf::Url;
 
 #[derive(Deserialize, Serialize, Debug)]
-pub struct BlockList {
-    pub items: Vec<Block>,
+pub struct List<T> {
+    pub items: Vec<T>,
 }
+
+pub type BlockList = List<Block>;
+pub type PeerList = List<MemberEntry>;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct MemberEntry {
