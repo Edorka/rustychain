@@ -69,13 +69,22 @@ async fn add_peer(mut req: Request<State>) -> tide::Result<Response> {
                 let res = Response::new(StatusCode::Ok);
                 Ok(res)
             }
-            EntryRejectedErr::Invalid(reason) => {
+            EntryRejectedErr::InvalidURL(reason) => {
                 let mut res = Response::new(StatusCode::BadRequest);
                 let rejected = APIErrorAndReason {
                     error: String::from("Peer rejected"),
                     reason: reason,
                 };
                 res.set_body(Body::from_json(&rejected)?);
+                Ok(res)
+            }
+            _ => {
+                let mut res = Response::new(StatusCode::BadRequest);
+                let unknown = APIErrorAndReason {
+                    error: String::from("Unknown error"),
+                    reason: String::from("reason"),
+                };
+                res.set_body(Body::from_json(&unknown)?);
                 Ok(res)
             }
         },

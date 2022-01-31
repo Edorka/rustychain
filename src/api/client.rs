@@ -1,5 +1,6 @@
 use crate::api::errors::APIErrorAndReason;
-use crate::api::structs::{BlockList, Limits};
+use crate::api::structs::EntryRejectedErr;
+use crate::api::structs::{BlockList, Limits, MemberEntry};
 use crate::blockchain::block::{get_epoch_ms, message_as_json, Block};
 use crate::blockchain::InvalidBlockErr;
 use surf::{Error, Response};
@@ -42,8 +43,27 @@ impl APIClient {
                 Ok(confirmed)
             }
             _ => {
+                let api_error: APIErrorAndReason = response.body_json().await.unwrap();
+                let error: InvalidBlockErr = api_error.into();
+                Err(error)
+            }
+        }
+    }
+    async fn send_peer(&self, peer: MemberEntry) -> Result<MemberEntry, EntryRejectedErr> {
+        let mut response: Response = surf::post(format!("{}/peers", &self.host_url))
+            .body_json(&peer)
+            .unwrap()
+            .await
+            .unwrap();
+        match response.status().is_success() {
+            true => {
+                let confirmed: MemberEntry = response.body_json().await.unwrap();
+                Ok(confirmed)
+            }
+            _ => {
                 let error: APIErrorAndReason = response.body_json().await.unwrap();
-                Err(error.as_native_error())
+                let nat_error: EntryRejectedErr = error.into();
+                Err(nat_error)
             }
         }
     }
@@ -91,12 +111,38 @@ mod tests {
         mock_server
     }
 
+    async fn arrange_server_mock_receive_peer(peer: MemberEntry) -> MockServer {
+        let mock_server = MockServer::start().await;
+
+        // Arrange the behaviour of the MockServer adding a Mock:
+        Mock::given(method("POST"))
+            .and(path("/peers"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(peer))
+            // Mounting the mock on the mock server - it's now effective!
+            .mount(&mock_server)
+            .await;
+        mock_server
+    }
+
     async fn arrange_server_mock_reject_block(error: APIErrorAndReason) -> MockServer {
         let mock_server = MockServer::start().await;
 
         // Arrange the behaviour of the MockServer adding a Mock:
         Mock::given(method("POST"))
             .and(path("/blocks"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(error))
+            // Mounting the mock on the mock server - it's now effective!
+            .mount(&mock_server)
+            .await;
+        mock_server
+    }
+
+    async fn arrange_server_mock_reject_peer(error: APIErrorAndReason) -> MockServer {
+        let mock_server = MockServer::start().await;
+
+        // Arrange the behaviour of the MockServer adding a Mock:
+        Mock::given(method("POST"))
+            .and(path("/peers"))
             .respond_with(ResponseTemplate::new(400).set_body_json(error))
             // Mounting the mock on the mock server - it's now effective!
             .mount(&mock_server)
@@ -168,7 +214,7 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn send_block_accepted() -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_sent_block_accepted() -> Result<(), Box<dyn std::error::Error>> {
         // Start a background HTTP server on a random local port
         let second_block = Block {
             index: 1,
@@ -191,7 +237,7 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn send_block_rejected_because_hash() -> Result<(), ()> {
+    async fn test_sent_block_rejected_because_hash() -> Result<(), ()> {
         // Start a background HTTP server on a random local port
         let error = InvalidBlockErr::HashNotMatching(
             String::from("00000000000000000000000000000000"),
@@ -219,7 +265,7 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn send_block_rejected_because_timestamp() -> Result<(), ()> {
+    async fn test_sent_block_rejected_because_timestamp() -> Result<(), ()> {
         // Start a background HTTP server on a random local port
         let error = InvalidBlockErr::NotPosterior(1000, 2000);
         let api_error = error.as_api_error();
@@ -244,7 +290,7 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn send_block_rejected_because_index() -> Result<(), ()> {
+    async fn test_sent_block_rejected_because_index() -> Result<(), ()> {
         // Start a background HTTP server on a random local port
         let error = InvalidBlockErr::NotCorrelated(1, 2);
         let api_error = error.as_api_error();
@@ -265,6 +311,46 @@ mod tests {
         assert_eq!(received_requests.len(), 1);
         assert_eq!(received_request.method, Method::Post);
         assert_eq!(failure, error);
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn test_sent_peer_accepted() -> Result<(), Box<dyn std::error::Error>> {
+        // Start a background HTTP server on a random local port
+        let new_member = MemberEntry {
+            peer: String::from("ws://localhost:5055"),
+        };
+        let mock_server = arrange_server_mock_receive_peer(new_member.clone()).await;
+        let client = APIClient::new(mock_server.uri());
+
+        let expected_new_member = new_member.clone();
+        let result: MemberEntry = client.send_peer(new_member).await.unwrap();
+        let received_requests = mock_server.received_requests().await.unwrap();
+        let received_request = &received_requests[0];
+        assert_eq!(result, expected_new_member);
+        assert_eq!(received_requests.len(), 1);
+        assert_eq!(received_request.method, Method::Post);
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn test_sent_peer_rejected_malformed() -> Result<(), Box<dyn std::error::Error>> {
+        // Start a background HTTP server on a random local port
+        let new_member = MemberEntry {
+            peer: String::from("ws://localhost:5055"),
+        };
+        let error = EntryRejectedErr::InvalidURL(new_member.peer.clone());
+        let api_error: APIErrorAndReason = error.into();
+        let mock_server = arrange_server_mock_reject_peer(api_error).await;
+        let client = APIClient::new(mock_server.uri());
+
+        let expected_new_member = new_member.clone();
+        let failure = client.send_peer(new_member).await.unwrap_err();
+        let received_requests = mock_server.received_requests().await.unwrap();
+        let received_request = &received_requests[0];
+        assert!(matches!(failure, error));
+        assert_eq!(received_requests.len(), 1);
+        assert_eq!(received_request.method, Method::Post);
         Ok(())
     }
 }

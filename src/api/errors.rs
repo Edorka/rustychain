@@ -1,3 +1,4 @@
+use crate::api::structs::{EntryRejectedErr, MemberEntry};
 use crate::blockchain::InvalidBlockErr;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -12,6 +13,10 @@ pub struct APIErrorAndReason {
 const HASH_NOT_MATCHING_LABEL: &str = "Previous hash not matching";
 const INDEX_NOT_CORRELATIVE_LABEL: &str = "New block index is not correlative";
 const TIMESTAMP_NOT_LATER_LABEL: &str = "New block timestamp must be later to previous";
+
+const ENTRY_ALREADY_PRESENT_LABEL: &str = "Entry is already on list";
+const ENTRY_URL_INVALID_LABEL: &str = "Invalid entry URL";
+
 lazy_static! {
     pub static ref HASH_NOT_MATCHING_DESC_REGEX: Regex =
         Regex::new(r"previous hash is ([a-f0-9]{32}) but ([a-f0-9]{32}) was provided").unwrap();
@@ -19,6 +24,10 @@ lazy_static! {
         Regex::new(r"expected index (\d+) but received (\d+) which is not inmediate next").unwrap();
     pub static ref NOT_POSTERIOR_DESC_REGEX: Regex =
         Regex::new(r"Given timestamp (\d+) is not later to (\d+)").unwrap();
+    pub static ref ENTRY_ALREADY_PRESENT_DESC_REGEX: Regex =
+        Regex::new(r"Entry is already a member: (.*)$").unwrap();
+    pub static ref ENTRY_INVALID_URL_DESC_REGEX: Regex =
+        Regex::new(r"Entry URL is invalid: (.*)$").unwrap();
 }
 
 fn params_for_hash_not_matching(reason: String) -> (String, String) {
@@ -47,6 +56,20 @@ fn params_for_not_posterior(reason: String) -> (u128, u128) {
         caps.get(2)
             .map_or(0, |m| m.as_str().parse::<u128>().unwrap()),
     )
+}
+
+fn param_for_entry_invalid_url(reason: String) -> String {
+    let caps = ENTRY_INVALID_URL_DESC_REGEX.captures(&*reason).unwrap();
+    let input: &str = caps.get(1).unwrap().as_str();
+    String::from(input)
+}
+
+fn param_for_entry_already_present(reason: String) -> MemberEntry {
+    let caps = ENTRY_INVALID_URL_DESC_REGEX.captures(&*reason).unwrap();
+    let input: &str = caps.get(1).unwrap().as_str();
+    MemberEntry {
+        peer: String::from(input),
+    }
 }
 
 impl InvalidBlockErr {
@@ -84,22 +107,63 @@ impl InvalidBlockErr {
     }
 }
 
-impl APIErrorAndReason {
-    pub fn as_native_error(self) -> InvalidBlockErr {
-        match &*self.error {
+impl From<APIErrorAndReason> for InvalidBlockErr {
+    fn from(api_error: APIErrorAndReason) -> Self {
+        match &*api_error.error {
             HASH_NOT_MATCHING_LABEL => {
-                let (expected, given) = params_for_hash_not_matching(self.reason);
+                let (expected, given) = params_for_hash_not_matching(api_error.reason);
                 InvalidBlockErr::HashNotMatching(expected, given)
             }
             INDEX_NOT_CORRELATIVE_LABEL => {
-                let (expected, given) = params_for_not_correlative(self.reason);
+                let (expected, given) = params_for_not_correlative(api_error.reason);
                 InvalidBlockErr::NotCorrelated(expected, given)
             }
             TIMESTAMP_NOT_LATER_LABEL => {
-                let (expected, given) = params_for_not_posterior(self.reason);
+                let (expected, given) = params_for_not_posterior(api_error.reason);
                 InvalidBlockErr::NotPosterior(expected, given)
             }
             _ => InvalidBlockErr::Unkown,
+        }
+    }
+}
+
+impl From<APIErrorAndReason> for EntryRejectedErr {
+    fn from(api_error: APIErrorAndReason) -> Self {
+        match &*api_error.error {
+            ENTRY_URL_INVALID_LABEL => {
+                let expected = param_for_entry_invalid_url(api_error.reason);
+                EntryRejectedErr::InvalidURL(expected)
+            }
+            ENTRY_ALREADY_PRESENT_LABEL => {
+                let expected = param_for_entry_already_present(api_error.reason);
+                EntryRejectedErr::AlreadyPresent(expected)
+            }
+            _ => EntryRejectedErr::Unknown,
+        }
+    }
+}
+
+impl From<EntryRejectedErr> for APIErrorAndReason {
+    fn from(native_error: EntryRejectedErr) -> Self {
+        match native_error {
+            EntryRejectedErr::AlreadyPresent(given) => {
+                let reason = format!("Entry is already a member: {}", given.peer);
+                APIErrorAndReason {
+                    error: String::from(ENTRY_ALREADY_PRESENT_LABEL),
+                    reason: String::from(reason),
+                }
+            }
+            EntryRejectedErr::InvalidURL(given) => {
+                let reason = format!("Entry URL is invalid: {}", given);
+                APIErrorAndReason {
+                    error: String::from(ENTRY_URL_INVALID_LABEL),
+                    reason: String::from(reason),
+                }
+            }
+            _ => APIErrorAndReason {
+                error: String::from("Unknown error"),
+                reason: String::from("reason"),
+            },
         }
     }
 }

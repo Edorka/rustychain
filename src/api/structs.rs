@@ -33,7 +33,7 @@ impl Peers {
     }
     pub fn append(&mut self, entry: MemberEntry) -> Result<MemberEntry, EntryRejectedErr> {
         if Url::parse(&*entry.peer).is_ok() == false {
-            return Err(EntryRejectedErr::Invalid(entry.peer));
+            return Err(EntryRejectedErr::InvalidURL(entry.peer));
         }
         if self.members.contains(&entry) {
             return Err(EntryRejectedErr::AlreadyPresent(entry));
@@ -65,9 +65,11 @@ pub struct State {
     pub peers: Arc<Mutex<Peers>>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum EntryRejectedErr {
     AlreadyPresent(MemberEntry),
-    Invalid(String),
+    InvalidURL(String),
+    Unknown,
 }
 
 impl State {
