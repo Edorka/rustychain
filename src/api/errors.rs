@@ -72,9 +72,9 @@ fn param_for_entry_already_present(reason: String) -> MemberEntry {
     }
 }
 
-impl InvalidBlockErr {
-    pub fn as_api_error(&self) -> APIErrorAndReason {
-        match self {
+impl From<InvalidBlockErr> for APIErrorAndReason {
+    fn from(native_error: InvalidBlockErr) -> Self {
+        match native_error {
             InvalidBlockErr::HashNotMatching(given, expected) => {
                 let reason = format!("previous hash is {} but {} was provided", expected, given);
                 APIErrorAndReason {

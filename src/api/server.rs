@@ -48,7 +48,7 @@ async fn add_block(mut req: Request<State>) -> tide::Result<Response> {
         }
         error => {
             let mut res = Response::new(StatusCode::BadRequest);
-            let error_and_reason = error.unwrap_err().as_api_error();
+            let error_and_reason = APIErrorAndReason::from(error.unwrap_err());
             res.set_body(Body::from_json(&error_and_reason)?);
             Ok(res)
         }
