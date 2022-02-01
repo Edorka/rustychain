@@ -339,10 +339,11 @@ mod tests {
     #[async_std::test]
     async fn test_sent_peer_rejected_malformed() -> Result<(), Box<dyn std::error::Error>> {
         // Start a background HTTP server on a random local port
+        let url = String::from("ws://localhost:5055");
         let new_member = MemberEntry {
-            peer: String::from("ws://localhost:5055"),
+            peer: url.clone()
         };
-        let error = EntryRejectedErr::InvalidURL(new_member.peer.clone());
+        let error = EntryRejectedErr::InvalidURL(url.clone());
         let api_error: APIErrorAndReason = APIErrorAndReason::from(error.clone());
         let mock_server = arrange_server_mock_reject_peer(api_error).await;
         let client = APIClient::new(mock_server.uri());
@@ -350,7 +351,7 @@ mod tests {
         let failure = client.send_peer(new_member).await.unwrap_err();
         let received_requests = mock_server.received_requests().await.unwrap();
         let received_request = &received_requests[0];
-        assert!(matches!(failure, error));
+        assert!(matches!(failure, EntryRejectedErr::InvalidURL(error_url) if url == error_url));
         assert_eq!(received_requests.len(), 1);
         assert_eq!(received_request.method, Method::Post);
         Ok(())
