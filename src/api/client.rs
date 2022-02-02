@@ -1,6 +1,6 @@
 use crate::api::errors::APIErrorAndReason;
-use crate::api::structs::EntryRejectedErr;
-use crate::api::structs::{BlockList, Limits, MemberEntry};
+use crate::peers::{EntryRejectedErr, MemberEntry};
+use crate::api::structs::{BlockList, Limits};
 use crate::blockchain::block::{get_epoch_ms, message_as_json, Block};
 use crate::blockchain::InvalidBlockErr;
 use surf::{Error, Response};

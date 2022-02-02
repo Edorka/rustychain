@@ -1,4 +1,5 @@
 mod blockchain;
+mod peers;
 mod api;
 
 fn main() {

@@ -1,4 +1,4 @@
-use crate::api::structs::{EntryRejectedErr, MemberEntry};
+use crate::peers::{EntryRejectedErr, MemberEntry};
 use crate::blockchain::InvalidBlockErr;
 use lazy_static::lazy_static;
 use regex::Regex;

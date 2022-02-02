@@ -1,5 +1,6 @@
 use crate::api::errors::APIErrorAndReason;
-use crate::api::structs::{BlockList, EntryRejectedErr, Limits, MemberEntry, PeerList, State};
+use crate::api::structs::{BlockList, Limits, PeerList, State};
+use crate::peers::{EntryRejectedErr, MemberEntry};
 use crate::blockchain::block::{message_as_json, Block};
 use std::sync::Once;
 use tide::{Body, Request, Response, Server, StatusCode};
